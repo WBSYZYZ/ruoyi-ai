@@ -14,8 +14,6 @@ import org.ruoyi.chat.util.IpUtil;
 import org.ruoyi.chat.util.SSEUtil;
 import org.ruoyi.common.chat.config.LocalCache;
 import org.ruoyi.common.chat.entity.Tts.TextToSpeech;
-import org.ruoyi.common.chat.entity.chat.ChatCompletion;
-import org.ruoyi.common.chat.entity.chat.ChatCompletionResponse;
 import org.ruoyi.common.chat.entity.chat.Message;
 import org.ruoyi.common.chat.entity.files.UploadFileResponse;
 import org.ruoyi.common.chat.entity.whisper.WhisperResponse;
@@ -26,9 +24,12 @@ import org.ruoyi.common.core.utils.StringUtils;
 import org.ruoyi.common.core.utils.file.FileUtils;
 import org.ruoyi.common.core.utils.file.MimeTypeUtils;
 import org.ruoyi.common.redis.utils.RedisUtils;
+import org.ruoyi.domain.ChatSession;
+import org.ruoyi.domain.bo.ChatSessionBo;
 import org.ruoyi.domain.vo.ChatModelVo;
 import org.ruoyi.service.EmbeddingService;
 import org.ruoyi.service.IChatModelService;
+import org.ruoyi.service.IChatSessionService;
 import org.ruoyi.service.VectorStoreService;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
@@ -67,6 +68,8 @@ public class SseServiceImpl implements ISseService {
 
     private final OllamaServiceImpl ollamaService;
 
+    private final IChatSessionService chatSessionService;
+
     private ChatModelVo chatModelVo;
 
 
@@ -82,6 +85,15 @@ public class SseServiceImpl implements ISseService {
             }else {
                 LocalCache.CACHE.put("userId", chatCostService.getUserId());
                 chatRequest.setUserId(chatCostService.getUserId());
+                // 保存会话信息
+                if(chatRequest.getSessionId()==null){
+                    ChatSessionBo chatSessionBo = new ChatSessionBo();
+                    chatSessionBo.setUserId(chatCostService.getUserId());
+                    chatSessionBo.setSessionTitle(getFirst10Characters(chatRequest.getPrompt()));
+                    chatSessionBo.setSessionContent(chatRequest.getPrompt());
+                    chatSessionService.insertByBo(chatSessionBo);
+                    chatRequest.setSessionId(chatSessionBo.getId());
+                }
                 // 保存消息记录 并扣除费用
                 chatCostService.deductToken(chatRequest);
             }
@@ -92,6 +104,23 @@ public class SseServiceImpl implements ISseService {
             SSEUtil.sendErrorEvent(sseEmitter,e.getMessage());
         }
         return sseEmitter;
+    }
+
+    /**
+     * 获取对话标题
+     *
+     * @param str 原字符
+     * @return 截取后的字符
+     */
+    public static String getFirst10Characters(String str) {
+        // 判断字符串长度
+        if (str.length() > 10) {
+            // 如果长度大于10，截取前10个字符
+            return str.substring(0, 10);
+        } else {
+            // 如果长度不足10，返回整个字符串
+            return str;
+        }
     }
 
     /**
@@ -269,22 +298,6 @@ public class SseServiceImpl implements ISseService {
             e.printStackTrace();
         }
         return file;
-    }
-
-
-    @Override
-    public String wxCpChat(String prompt) {
-        List<Message> messageList = new ArrayList<>();
-        Message message = Message.builder().role(Message.Role.USER).content(prompt).build();
-        messageList.add(message);
-        ChatCompletion chatCompletion = ChatCompletion
-            .builder()
-            .messages(messageList)
-            .model("gpt-4o-mini")
-            .stream(false)
-            .build();
-        ChatCompletionResponse chatCompletionResponse = openAiStreamClient.chatCompletion(chatCompletion);
-        return chatCompletionResponse.getChoices().get(0).getMessage().getContent().toString();
     }
 
 }

@@ -35,6 +35,11 @@ public class ChatMessage extends BaseEntity {
     private Long userId;
 
     /**
+     * 会话id
+     */
+    private Long sessionId;
+
+    /**
      * 消息内容
      */
     private String content;
